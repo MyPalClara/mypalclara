@@ -144,35 +144,29 @@ export const threadListAdapter: RemoteThreadListAdapter = {
 
   /**
    * Generate a title for the thread based on messages.
-   * Returns an AssistantStream with the generated title.
+   * Returns a Promise<AssistantStream> with the generated title.
    */
-  generateTitle(remoteId: string, messages: readonly { role: string; content: unknown }[]) {
-    // Find the first user message to use as title
-    const firstUserMessage = messages.find((m) => m.role === "user");
-
-    let titleText = "New Chat";
-    if (firstUserMessage) {
-      if (typeof firstUserMessage.content === "string") {
-        titleText = firstUserMessage.content;
-      } else if (Array.isArray(firstUserMessage.content)) {
-        const textPart = (firstUserMessage.content as ContentPart[]).find(
-          (p) => p.type === "text"
-        );
-        if (textPart?.text) {
-          titleText = textPart.text;
-        }
+  async generateTitle(remoteId: string) {
+    // Request title generation from backend
+    try {
+      const response = await fetch(`${BACKEND_URL}/api/threads/${remoteId}/generate-title`, {
+        method: "POST",
+      });
+      if (response.ok) {
+        const data = await response.json();
+        const title = data.title || "New Chat";
+        return createAssistantStream((controller) => {
+          controller.appendText(title);
+          controller.close();
+        });
       }
+    } catch (error) {
+      console.error("[threads] Error generating title:", error);
     }
 
-    // Truncate to reasonable length
-    const title = titleText.slice(0, 50) + (titleText.length > 50 ? "..." : "");
-
-    // Save to backend
-    this.rename(remoteId, title);
-
-    // Return an AssistantStream with the title
+    // Fallback
     return createAssistantStream((controller) => {
-      controller.appendText(title);
+      controller.appendText("New Chat");
       controller.close();
     });
   },
@@ -185,9 +179,10 @@ export function createHistoryAdapter(remoteId: string | undefined): ThreadHistor
   const adapter: ThreadHistoryAdapter = {
     /**
      * Required for load() to be called - returns self with same interface.
+     * Type cast needed due to complex generic constraints in assistant-ui.
      */
     withFormat() {
-      return adapter;
+      return adapter as any;
     },
 
     /**

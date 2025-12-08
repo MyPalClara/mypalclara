@@ -325,6 +325,74 @@ def rename_thread(thread_id: str, request: ThreadRenameRequest):
         db.close()
 
 
+@app.post("/api/threads/{thread_id}/generate-title")
+def generate_thread_title(thread_id: str):
+    """Generate a title for the thread using LLM based on messages."""
+    db = SessionLocal()
+    try:
+        sess = db.query(Session).filter_by(id=thread_id).first()
+        if not sess:
+            raise HTTPException(status_code=404, detail="Thread not found")
+
+        # Get the first few messages
+        messages = (
+            db.query(Message)
+            .filter_by(session_id=thread_id)
+            .order_by(Message.created_at.asc())
+            .limit(4)
+            .all()
+        )
+
+        if not messages:
+            return {"title": "New Chat"}
+
+        # Build context for title generation
+        context = "\n".join([
+            f"{msg.role}: {msg.content[:200]}"
+            for msg in messages
+            if msg.content
+        ])
+
+        # Use LLM to generate a short title
+        title_prompt = [
+            {
+                "role": "system",
+                "content": "Generate a very short title (3-6 words) that summarizes this conversation. Return ONLY the title, nothing else. No quotes, no punctuation at the end."
+            },
+            {
+                "role": "user",
+                "content": f"Conversation:\n{context}"
+            }
+        ]
+
+        try:
+            llm = make_llm()
+            title = llm(title_prompt).strip()
+            # Clean up and truncate
+            title = title.strip('"\'').strip()
+            if len(title) > 50:
+                title = title[:47] + "..."
+        except Exception as e:
+            print(f"[api] Error generating title with LLM: {e}")
+            # Fallback to first user message
+            first_user = next((m for m in messages if m.role == "user"), None)
+            if first_user and first_user.content:
+                title = first_user.content[:50]
+                if len(first_user.content) > 50:
+                    title += "..."
+            else:
+                title = "New Chat"
+
+        # Save the title
+        sess.title = title
+        db.commit()
+        print(f"[api] Generated title for thread {thread_id}: {title}")
+
+        return {"title": title}
+    finally:
+        db.close()
+
+
 @app.delete("/api/threads/{thread_id}")
 def delete_thread(thread_id: str):
     """Archive (soft delete) a thread."""
