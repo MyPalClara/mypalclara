@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import os
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import List, Dict, Optional, Tuple
 
@@ -118,7 +118,7 @@ class MemoryManager:
             self._store_message(db, sess.id, user_id, "user", user_message)
             self._store_message(db, sess.id, user_id,
                                 "assistant", assistant_reply)
-            sess.last_activity_at = datetime.utcnow()
+            sess.last_activity_at = datetime.now(timezone.utc).replace(tzinfo=None)
             db.commit()
 
             # 5) send a slice of the convo to mem0 so it can extract/update memory
@@ -165,7 +165,7 @@ class MemoryManager:
             # 4) store messages
             self._store_message(db, sess.id, user_id, "user", user_message)
             self._store_message(db, sess.id, user_id, "assistant", assistant_reply)
-            sess.last_activity_at = datetime.utcnow()
+            sess.last_activity_at = datetime.now(timezone.utc).replace(tzinfo=None)
             db.commit()
 
             # 5) send to mem0
@@ -186,7 +186,8 @@ class MemoryManager:
             .order_by(Session.started_at.desc())
             .first()
         )
-        now = datetime.utcnow()
+        # Use naive UTC datetime for compatibility with existing DB records
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
         if not last:
             return self._create_session(db, user_id, project_id, None)
 
@@ -283,10 +284,9 @@ class MemoryManager:
         user_id: str,
         role: str,
         content: str,
-        source: Optional[str] = None,
     ) -> Message:
         msg = Message(session_id=session_id, user_id=user_id,
-                      role=role, content=content, source=source)
+                      role=role, content=content)
         db.add(msg)
         db.commit()
         db.refresh(msg)

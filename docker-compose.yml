@@ -1,21 +1,21 @@
 services:
   backend:
-    image: ${REGISTRY:-}clara-backend:latest
+    image: ${REGISTRY:-}mypalclara-backend:latest
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: clara-backend
+    container_name: mypalclara-backend
     ports:
-      - "8484:8000"
+      - "8000:8000"
     environment:
       # LLM Provider
-      - LLM_PROVIDER=${LLM_PROVIDER:-nanogpt}
-      # OpenRouter
+      - LLM_PROVIDER=${LLM_PROVIDER:-openrouter}
+      # OpenRouter (when LLM_PROVIDER=openrouter)
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
-      - OPENROUTER_MODEL=${OPENROUTER_MODEL:-moonshotai/kimi-k2-0905}
+      - OPENROUTER_MODEL=${OPENROUTER_MODEL:-anthropic/claude-sonnet-4}
       - OPENROUTER_SITE=${OPENROUTER_SITE:-http://localhost:3000}
-      - OPENROUTER_TITLE=${OPENROUTER_TITLE:-Clara Assistant}
-      # NanoGPT
+      - OPENROUTER_TITLE=${OPENROUTER_TITLE:-MyPalClara}
+      # NanoGPT (when LLM_PROVIDER=nanogpt)
       - NANOGPT_API_KEY=${NANOGPT_API_KEY}
       - NANOGPT_MODEL=${NANOGPT_MODEL:-moonshotai/Kimi-K2-Instruct-0905}
       - NANOGPT_MEM0_MODEL=${NANOGPT_MEM0_MODEL:-openai/gpt-oss-120b}
@@ -25,10 +25,10 @@ services:
       - USER_ID=${USER_ID:-demo-user}
       - DEFAULT_PROJECT=${DEFAULT_PROJECT:-Default Project}
     volumes:
-      - clara-data:/data
+      - mypalclara-data:/data
       - ./user_profile.txt:/app/user_profile.txt:ro
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/api/projects"]
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -36,30 +36,27 @@ services:
     restart: unless-stopped
 
   frontend:
-    image: ${REGISTRY:-}clara-frontend:latest
+    image: ${REGISTRY:-}mypalclara-frontend:latest
     build:
       context: ./frontend
       dockerfile: Dockerfile
-      args:
-        # Client-side URL (browser access) - set to your external IP/domain
-        - NEXT_PUBLIC_BACKEND_URL=${NEXT_PUBLIC_BACKEND_URL:-http://localhost:8484}
-    container_name: clara-frontend
+    container_name: mypalclara-frontend
     ports:
-      - "3434:3000"
+      - "3000:3000"
     environment:
       # LLM Provider
-      - LLM_PROVIDER=${LLM_PROVIDER:-nanogpt}
-      # OpenRouter
+      - LLM_PROVIDER=${LLM_PROVIDER:-openrouter}
+      # OpenRouter (when LLM_PROVIDER=openrouter)
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
-      - OPENROUTER_MODEL=${OPENROUTER_MODEL:-moonshotai/kimi-k2-0905}
+      - OPENROUTER_MODEL=${OPENROUTER_MODEL:-anthropic/claude-sonnet-4}
       - OPENROUTER_SITE=${OPENROUTER_SITE:-http://localhost:3000}
-      - OPENROUTER_TITLE=${OPENROUTER_TITLE:-Clara Assistant}
-      # NanoGPT
+      - OPENROUTER_TITLE=${OPENROUTER_TITLE:-MyPalClara}
+      # NanoGPT (when LLM_PROVIDER=nanogpt)
       - NANOGPT_API_KEY=${NANOGPT_API_KEY}
       - NANOGPT_MODEL=${NANOGPT_MODEL:-moonshotai/Kimi-K2-Instruct-0905}
       # Backend URL (server-side, internal Docker network)
       - BACKEND_URL=http://backend:8000
-      # OpenAI (for embeddings)
+      # OpenAI (for embeddings - if needed)
       - OPENAI_API_KEY=${OPENAI_API_KEY}
     depends_on:
       backend:
@@ -73,8 +70,8 @@ services:
     restart: unless-stopped
 
 volumes:
-  clara-data:
+  mypalclara-data:
 
 networks:
   default:
-    name: clara-network
+    name: mypalclara-network

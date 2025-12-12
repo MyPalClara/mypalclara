@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Clara",
-  description: "Clara AI Assistant",
+  title: "MyPalClara",
+  description: "MyPalClara - AI Assistant",
 };
 
 export default function RootLayout({

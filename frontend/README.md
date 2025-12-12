@@ -1,25 +1,28 @@
-This is the [assistant-ui](https://github.com/Yonom/assistant-ui) starter project.
+# MyPalClara Frontend
+
+Next.js frontend for MyPalClara, built with [assistant-ui](https://github.com/Yonom/assistant-ui).
 
 ## Getting Started
 
-First, add your OpenAI API key to `.env.local` file:
+First, configure your environment in `.env.local`:
 
-```
-OPENAI_API_KEY=sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+```bash
+# LLM Provider (openrouter or nanogpt)
+LLM_PROVIDER=openrouter
+
+# OpenRouter
+OPENROUTER_API_KEY=your-key-here
+OPENROUTER_MODEL=anthropic/claude-sonnet-4
+
+# Backend URL (for server-side requests)
+BACKEND_URL=http://localhost:8000
 ```
 
 Then, run the development server:
 
 ```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
-
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Open [http://localhost:3000](http://localhost:3000) with your browser.

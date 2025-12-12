@@ -1,7 +1,12 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 import uuid
+
+
+def utcnow():
+    """Return current UTC time (naive, for SQLite compatibility)."""
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 from sqlalchemy import (
     Column,
@@ -38,9 +43,9 @@ class Session(Base):
     user_id = Column(String, nullable=False)
     title = Column(String, nullable=True)  # Thread title for UI
     archived = Column(String, default="false", nullable=False)  # "true" or "false"
-    started_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    started_at = Column(DateTime, default=utcnow, nullable=False)
     last_activity_at = Column(
-        DateTime, default=datetime.utcnow, nullable=False)
+        DateTime, default=utcnow, nullable=False)
     previous_session_id = Column(String, nullable=True)
     context_snapshot = Column(Text, nullable=True)
     session_summary = Column(Text, nullable=True)  # LLM-generated summary
@@ -57,7 +62,6 @@ class Message(Base):
     user_id = Column(String, nullable=False)
     role = Column(String, nullable=False)  # 'user' | 'assistant'
     content = Column(Text, nullable=False)
-    source = Column(String, nullable=True)  # 'telegram' | 'web' | None
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utcnow, nullable=False)
 
     session = relationship("Session", back_populates="messages")

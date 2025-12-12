@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import os
-from typing import Callable, List, Dict, Generator, AsyncGenerator
+from typing import Callable, List, Dict, Generator
 
 from openai import OpenAI
 
 # Global clients for reuse
 _openrouter_client: OpenAI = None
 _nanogpt_client: OpenAI = None
+_custom_openai_client: OpenAI = None
 
 
 def _get_openrouter_client() -> OpenAI:
@@ -19,7 +20,7 @@ def _get_openrouter_client() -> OpenAI:
             raise RuntimeError("OPENROUTER_API_KEY is not set")
 
         site = os.getenv("OPENROUTER_SITE", "http://localhost:3000")
-        title = os.getenv("OPENROUTER_TITLE", "Clara Assistant")
+        title = os.getenv("OPENROUTER_TITLE", "MyPalClara")
 
         _openrouter_client = OpenAI(
             base_url="https://openrouter.ai/api/v1",
@@ -47,6 +48,23 @@ def _get_nanogpt_client() -> OpenAI:
     return _nanogpt_client
 
 
+def _get_custom_openai_client() -> OpenAI:
+    """Get or create custom OpenAI-compatible client."""
+    global _custom_openai_client
+    if _custom_openai_client is None:
+        api_key = os.getenv("CUSTOM_OPENAI_API_KEY")
+        if not api_key:
+            raise RuntimeError("CUSTOM_OPENAI_API_KEY is not set")
+
+        base_url = os.getenv("CUSTOM_OPENAI_BASE_URL", "https://api.openai.com/v1")
+
+        _custom_openai_client = OpenAI(
+            base_url=base_url,
+            api_key=api_key,
+        )
+    return _custom_openai_client
+
+
 def make_llm() -> Callable[[List[Dict[str, str]]], str]:
     """
     Return a function(messages) -> assistant_reply string.
@@ -54,7 +72,7 @@ def make_llm() -> Callable[[List[Dict[str, str]]], str]:
     Select backend with env var LLM_PROVIDER:
       - "openrouter" (default)
       - "nanogpt"
-      - "huggingface"
+      - "openai" (custom OpenAI-compatible endpoint)
     """
     provider = os.getenv("LLM_PROVIDER", "openrouter").lower()
 
@@ -62,8 +80,8 @@ def make_llm() -> Callable[[List[Dict[str, str]]], str]:
         return _make_openrouter_llm()
     elif provider == "nanogpt":
         return _make_nanogpt_llm()
-    elif provider == "huggingface":
-        return _make_hf_llm()
+    elif provider == "openai":
+        return _make_custom_openai_llm()
     else:
         raise ValueError(f"Unknown LLM_PROVIDER={provider}")
 
@@ -71,7 +89,7 @@ def make_llm() -> Callable[[List[Dict[str, str]]], str]:
 def _make_openrouter_llm() -> Callable[[List[Dict[str, str]]], str]:
     """Non-streaming OpenRouter LLM."""
     client = _get_openrouter_client()
-    model = os.getenv("OPENROUTER_MODEL", "openai/gpt-4o-mini")
+    model = os.getenv("OPENROUTER_MODEL", "anthropic/claude-sonnet-4")
 
     def llm(messages: List[Dict[str, str]]) -> str:
         resp = client.chat.completions.create(
@@ -98,19 +116,16 @@ def _make_nanogpt_llm() -> Callable[[List[Dict[str, str]]], str]:
     return llm
 
 
-def _make_hf_llm() -> Callable[[List[Dict[str, str]]], str]:
-    """Non-streaming HuggingFace LLM."""
-    from huggingface_hub import InferenceClient
-
-    token = os.getenv("HF_API_TOKEN")
-    if not token:
-        raise RuntimeError("HF_API_TOKEN is not set")
-
-    model = os.getenv("HF_MODEL", "meta-llama/Meta-Llama-3.1-8B-Instruct")
-    client = InferenceClient(token=token, model=model)
+def _make_custom_openai_llm() -> Callable[[List[Dict[str, str]]], str]:
+    """Non-streaming custom OpenAI-compatible LLM."""
+    client = _get_custom_openai_client()
+    model = os.getenv("CUSTOM_OPENAI_MODEL", "gpt-4o")
 
     def llm(messages: List[Dict[str, str]]) -> str:
-        resp = client.chat_completion(messages=messages, max_tokens=512, stream=False)
+        resp = client.chat.completions.create(
+            model=model,
+            messages=messages,
+        )
         return resp.choices[0].message.content
 
     return llm
@@ -124,6 +139,8 @@ def make_llm_streaming() -> Callable[[List[Dict[str, str]]], Generator[str, None
         return _make_openrouter_llm_streaming()
     elif provider == "nanogpt":
         return _make_nanogpt_llm_streaming()
+    elif provider == "openai":
+        return _make_custom_openai_llm_streaming()
     else:
         raise ValueError(f"Streaming not supported for LLM_PROVIDER={provider}")
 
@@ -131,7 +148,7 @@ def make_llm_streaming() -> Callable[[List[Dict[str, str]]], Generator[str, None
 def _make_openrouter_llm_streaming() -> Callable[[List[Dict[str, str]]], Generator[str, None, None]]:
     """Streaming OpenRouter LLM."""
     client = _get_openrouter_client()
-    model = os.getenv("OPENROUTER_MODEL", "openai/gpt-4o-mini")
+    model = os.getenv("OPENROUTER_MODEL", "anthropic/claude-sonnet-4")
 
     def llm(messages: List[Dict[str, str]]) -> Generator[str, None, None]:
         stream = client.chat.completions.create(
@@ -150,6 +167,24 @@ def _make_nanogpt_llm_streaming() -> Callable[[List[Dict[str, str]]], Generator[
     """Streaming NanoGPT LLM."""
     client = _get_nanogpt_client()
     model = os.getenv("NANOGPT_MODEL", "moonshotai/Kimi-K2-Instruct-0905")
+
+    def llm(messages: List[Dict[str, str]]) -> Generator[str, None, None]:
+        stream = client.chat.completions.create(
+            model=model,
+            messages=messages,
+            stream=True,
+        )
+        for chunk in stream:
+            if chunk.choices and chunk.choices[0].delta.content:
+                yield chunk.choices[0].delta.content
+
+    return llm
+
+
+def _make_custom_openai_llm_streaming() -> Callable[[List[Dict[str, str]]], Generator[str, None, None]]:
+    """Streaming custom OpenAI-compatible LLM."""
+    client = _get_custom_openai_client()
+    model = os.getenv("CUSTOM_OPENAI_MODEL", "gpt-4o")
 
     def llm(messages: List[Dict[str, str]]) -> Generator[str, None, None]:
         stream = client.chat.completions.create(

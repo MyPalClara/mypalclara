@@ -1,8 +1,8 @@
-"""FastAPI backend for Clara assistant."""
+"""FastAPI backend for MyPalClara assistant."""
 from __future__ import annotations
 
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -21,7 +21,7 @@ load_dotenv()
 USER_ID = os.getenv("USER_ID", "demo-user")
 DEFAULT_PROJECT = os.getenv("DEFAULT_PROJECT", "Default Project")
 
-app = FastAPI(title="Clara API")
+app = FastAPI(title="MyPalClara API")
 
 
 @app.exception_handler(RequestValidationError)
@@ -76,7 +76,6 @@ class StoreRequest(BaseModel):
     assistant_message: str
     thread_id: str = None  # Optional: use specific thread
     project: str = DEFAULT_PROJECT
-    source: str = "web"  # "telegram" or "web"
 
 
 class ThreadRenameRequest(BaseModel):
@@ -88,14 +87,12 @@ class MessageAppendRequest(BaseModel):
     content: str
     id: str = None
     createdAt: str = None
-    source: str = None  # "telegram" or "web"
 
 
 class ChatRequest(BaseModel):
     message: str
     thread_id: str = None
     project: str = DEFAULT_PROJECT
-    source: str = "web"  # "telegram" or "web"
 
 
 @app.on_event("startup")
@@ -111,23 +108,6 @@ def startup():
     print("[api] MemoryManager initialized")
     load_initial_profile(USER_ID)
     print("[api] Initial profile loaded")
-
-    # Start Telegram bot in background if configured (only once)
-    telegram_token = os.getenv("TELEGRAM_BOT_TOKEN")
-    if telegram_token:
-        import threading
-        # Check if bot thread already exists
-        bot_running = any(t.name == "telegram_bot" for t in threading.enumerate())
-        if not bot_running:
-            from telegram_bot import start_bot_sync
-            bot_thread = threading.Thread(target=start_bot_sync, daemon=True, name="telegram_bot")
-            bot_thread.start()
-            print("[api] Telegram bot started in background")
-        else:
-            print("[api] Telegram bot already running, skipping duplicate start")
-    else:
-        print("[api] Telegram bot not configured (TELEGRAM_BOT_TOKEN not set)")
-
     print("[api] Ready to accept requests on http://localhost:8000")
 
 
@@ -204,10 +184,10 @@ def store_messages(request: StoreRequest):
 
         recent_msgs = mm._get_recent_messages(db, sess.id)
 
-        # Store messages with source tracking
-        mm._store_message(db, sess.id, USER_ID, "user", request.user_message, source=request.source)
-        mm._store_message(db, sess.id, USER_ID, "assistant", request.assistant_message, source=request.source)
-        sess.last_activity_at = datetime.utcnow()
+        # Store messages
+        mm._store_message(db, sess.id, USER_ID, "user", request.user_message)
+        mm._store_message(db, sess.id, USER_ID, "assistant", request.assistant_message)
+        sess.last_activity_at = datetime.now(timezone.utc).replace(tzinfo=None)
 
         # Auto-generate title from first user message if not set
         if not sess.title and request.user_message:
@@ -232,10 +212,10 @@ def store_messages(request: StoreRequest):
 @app.post("/api/chat")
 def chat(request: ChatRequest):
     """
-    Unified chat endpoint for both Telegram and web UI.
+    Chat endpoint for web UI.
     Gets context, calls LLM, stores messages, returns response.
     """
-    print(f"[api] /api/chat from {request.source}: {request.message[:50]}...")
+    print(f"[api] /api/chat: {request.message[:50]}...")
     project_id = ensure_project(request.project or DEFAULT_PROJECT)
 
     db = SessionLocal()
@@ -269,10 +249,10 @@ def chat(request: ChatRequest):
         llm = make_llm()
         response = llm(prompt_messages)
 
-        # Store messages with source tracking
-        mm._store_message(db, sess.id, USER_ID, "user", request.message, source=request.source)
-        mm._store_message(db, sess.id, USER_ID, "assistant", response, source=request.source)
-        sess.last_activity_at = datetime.utcnow()
+        # Store messages
+        mm._store_message(db, sess.id, USER_ID, "user", request.message)
+        mm._store_message(db, sess.id, USER_ID, "assistant", response)
+        sess.last_activity_at = datetime.now(timezone.utc).replace(tzinfo=None)
 
         # Auto-generate title from first user message if not set
         if not sess.title and request.message:
@@ -293,7 +273,6 @@ def chat(request: ChatRequest):
         return {
             "content": response,
             "thread_id": sess.id,
-            "source": request.source,
         }
     finally:
         db.close()
@@ -413,12 +392,11 @@ def append_message(thread_id: str, request: MessageAppendRequest):
             user_id=USER_ID,
             role=request.role,
             content=request.content,
-            source=request.source or "web",  # Default to "web" if not specified
         )
         db.add(msg)
-        sess.last_activity_at = datetime.utcnow()
+        sess.last_activity_at = datetime.now(timezone.utc).replace(tzinfo=None)
         db.commit()
-        print(f"[api] Appended {request.role} message to thread {thread_id} (source={msg.source})")
+        print(f"[api] Appended {request.role} message to thread {thread_id}")
         return {"status": "ok", "id": str(msg.id)}
     finally:
         db.close()

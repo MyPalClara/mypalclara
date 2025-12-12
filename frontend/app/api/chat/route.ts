@@ -11,7 +11,7 @@ interface ChatMessage {
 }
 
 // LLM Provider configuration
-const LLM_PROVIDER = process.env.LLM_PROVIDER || "openrouter";
+const LLM_PROVIDER = (process.env.LLM_PROVIDER || "openrouter").toLowerCase().trim();
 
 // Create OpenRouter client (OpenAI-compatible)
 const openrouter = createOpenAI({
@@ -19,17 +19,25 @@ const openrouter = createOpenAI({
   apiKey: process.env.OPENROUTER_API_KEY!,
   headers: {
     "HTTP-Referer": process.env.OPENROUTER_SITE || "http://localhost:3000",
-    "X-Title": process.env.OPENROUTER_TITLE || "Clara Assistant",
+    "X-Title": process.env.OPENROUTER_TITLE || "MyPalClara",
   },
 });
 
 // Create NanoGPT client using OpenAI-compatible provider
-// This forces the standard /chat/completions endpoint
 const nanogpt = createOpenAICompatible({
   name: "nanogpt",
   baseURL: "https://nano-gpt.com/api/v1",
   headers: {
     Authorization: `Bearer ${process.env.NANOGPT_API_KEY}`,
+  },
+});
+
+// Create custom OpenAI-compatible client (uses /chat/completions endpoint)
+const customOpenAI = createOpenAICompatible({
+  name: "custom-openai",
+  baseURL: process.env.CUSTOM_OPENAI_BASE_URL || "https://api.openai.com/v1",
+  headers: {
+    Authorization: `Bearer ${process.env.CUSTOM_OPENAI_API_KEY}`,
   },
 });
 
@@ -39,6 +47,10 @@ function getModel() {
     const modelName = process.env.NANOGPT_MODEL || "moonshotai/kimi-k2-thinking";
     console.log("[chat] Using NanoGPT with model:", modelName);
     return nanogpt.chatModel(modelName);
+  } else if (LLM_PROVIDER === "openai") {
+    const modelName = process.env.CUSTOM_OPENAI_MODEL || "gpt-4o";
+    console.log("[chat] Using custom OpenAI with model:", modelName);
+    return customOpenAI.chatModel(modelName);
   } else {
     const modelName = process.env.OPENROUTER_MODEL || "anthropic/claude-sonnet-4";
     console.log("[chat] Using OpenRouter with model:", modelName);
