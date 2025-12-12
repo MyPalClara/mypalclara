@@ -1,19 +1,25 @@
+"use client";
+
 import * as React from "react";
-import { MessagesSquare } from "lucide-react";
+import { MessagesSquare, Brain } from "lucide-react";
 import {
   Sidebar,
   SidebarContent,
   SidebarHeader,
+  SidebarFooter,
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarRail,
 } from "@/components/ui/sidebar";
 import { ThreadList } from "@/components/assistant-ui/thread-list";
+import { MemoryManager } from "@/components/memory-manager";
 
 export function ThreadListSidebar({
   ...props
 }: React.ComponentProps<typeof Sidebar>) {
+  const [memoryOpen, setMemoryOpen] = React.useState(false);
+
   return (
     <Sidebar {...props}>
       <SidebarHeader className="aui-sidebar-header mb-2 border-b">
@@ -37,7 +43,18 @@ export function ThreadListSidebar({
       <SidebarContent className="aui-sidebar-content px-2">
         <ThreadList />
       </SidebarContent>
+      <SidebarFooter className="border-t p-2">
+        <SidebarMenu>
+          <SidebarMenuItem>
+            <SidebarMenuButton onClick={() => setMemoryOpen(true)}>
+              <Brain className="size-4" />
+              <span>Memories</span>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+        </SidebarMenu>
+      </SidebarFooter>
       <SidebarRail />
+      <MemoryManager open={memoryOpen} onOpenChange={setMemoryOpen} />
     </Sidebar>
   );
 }

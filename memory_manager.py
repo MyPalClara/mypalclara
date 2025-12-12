@@ -302,24 +302,24 @@ class MemoryManager:
           - user-level memories (filters by user_id)
           - project-level memories (filters by user_id + project_id)
         """
-        try:
-            user_res = MEM0.search(
-                user_message,
-                user_id=user_id,
-            )
-            proj_res = MEM0.search(
-                user_message,
-                user_id=user_id,
-                filters={"project_id": project_id},
-            )
-            user_mems = [r["memory"] for r in user_res.get("results", [])]
-            proj_mems = [r["memory"] for r in proj_res.get("results", [])]
-            if user_mems or proj_mems:
-                print(f"[mem0] Found {len(user_mems)} user memories, {len(proj_mems)} project memories")
-            return user_mems, proj_mems
-        except Exception as e:
-            print(f"[mem0] Error searching memories: {e}")
+        if MEM0 is None:
+            print("[mem0] Memory not initialized, skipping search")
             return [], []
+
+        user_res = MEM0.search(
+            user_message,
+            user_id=user_id,
+        )
+        proj_res = MEM0.search(
+            user_message,
+            user_id=user_id,
+            filters={"project_id": project_id},
+        )
+        user_mems = [r["memory"] for r in user_res.get("results", [])]
+        proj_mems = [r["memory"] for r in proj_res.get("results", [])]
+        if user_mems or proj_mems:
+            print(f"[mem0] Found {len(user_mems)} user memories, {len(proj_mems)} project memories")
+        return user_mems, proj_mems
 
     def _add_to_mem0(
         self,
@@ -331,7 +331,12 @@ class MemoryManager:
     ) -> None:
         """
         Send a small slice of the recent conversation to mem0.add().
+        Errors will propagate up and block the request.
         """
+        if MEM0 is None:
+            print("[mem0] Memory not initialized, skipping add")
+            return
+
         history_slice = [
             {"role": m.role, "content": m.content}
             for m in recent_msgs[-4:]
@@ -340,15 +345,12 @@ class MemoryManager:
             {"role": "assistant", "content": assistant_reply},
         ]
 
-        try:
-            result = MEM0.add(
-                history_slice,
-                user_id=user_id,
-                metadata={"project_id": project_id},
-            )
-            print(f"[mem0] Added memories: {result}")
-        except Exception as e:
-            print(f"[mem0] Error adding memories: {e}")
+        result = MEM0.add(
+            history_slice,
+            user_id=user_id,
+            metadata={"project_id": project_id},
+        )
+        print(f"[mem0] Added memories: {result}")
 
     # ---------- prompt building ----------
 

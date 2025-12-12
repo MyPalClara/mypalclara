@@ -565,6 +565,134 @@ def test_post(request: ContextRequest):
     return {"received": request.model_dump()}
 
 
+# ============== Memory Management API ==============
+
+from mem0_config import MEM0
+
+
+class MemoryUpdateRequest(BaseModel):
+    text: str
+
+
+@app.get("/api/memories")
+def list_memories(project_id: str = None):
+    """List all memories for the user, optionally filtered by project."""
+    if MEM0 is None:
+        raise HTTPException(status_code=503, detail="Memory system not available")
+
+    try:
+        result = MEM0.get_all(user_id=USER_ID)
+        memories = result.get("results", []) if isinstance(result, dict) else result
+
+        # Filter by project if specified
+        if project_id:
+            memories = [
+                m for m in memories
+                if m.get("metadata", {}).get("project_id") == project_id
+            ]
+
+        print(f"[api] Listed {len(memories)} memories")
+        return {"memories": memories}
+    except Exception as e:
+        print(f"[api] Error listing memories: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/memories/{memory_id}")
+def get_memory(memory_id: str):
+    """Get a specific memory by ID."""
+    if MEM0 is None:
+        raise HTTPException(status_code=503, detail="Memory system not available")
+
+    try:
+        result = MEM0.get(memory_id)
+        if not result:
+            raise HTTPException(status_code=404, detail="Memory not found")
+        print(f"[api] Retrieved memory {memory_id}")
+        return {"memory": result}
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[api] Error getting memory: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.put("/api/memories/{memory_id}")
+def update_memory(memory_id: str, request: MemoryUpdateRequest):
+    """Update a memory's text."""
+    if MEM0 is None:
+        raise HTTPException(status_code=503, detail="Memory system not available")
+
+    try:
+        result = MEM0.update(memory_id, request.text)
+        print(f"[api] Updated memory {memory_id}")
+        return {"status": "ok", "result": result}
+    except Exception as e:
+        print(f"[api] Error updating memory: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/api/memories/{memory_id}")
+def delete_memory(memory_id: str):
+    """Delete a specific memory."""
+    if MEM0 is None:
+        raise HTTPException(status_code=503, detail="Memory system not available")
+
+    try:
+        MEM0.delete(memory_id)
+        print(f"[api] Deleted memory {memory_id}")
+        return {"status": "ok"}
+    except Exception as e:
+        print(f"[api] Error deleting memory: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/api/memories")
+def delete_all_memories(project_id: str = None):
+    """Delete all memories for the user, optionally filtered by project."""
+    if MEM0 is None:
+        raise HTTPException(status_code=503, detail="Memory system not available")
+
+    try:
+        if project_id:
+            # Get all memories and delete those matching project
+            result = MEM0.get_all(user_id=USER_ID)
+            memories = result.get("results", []) if isinstance(result, dict) else result
+            deleted = 0
+            for m in memories:
+                if m.get("metadata", {}).get("project_id") == project_id:
+                    MEM0.delete(m["id"])
+                    deleted += 1
+            print(f"[api] Deleted {deleted} memories for project {project_id}")
+            return {"status": "ok", "deleted": deleted}
+        else:
+            MEM0.delete_all(user_id=USER_ID)
+            print(f"[api] Deleted all memories for user {USER_ID}")
+            return {"status": "ok"}
+    except Exception as e:
+        print(f"[api] Error deleting memories: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/memories/search")
+def search_memories(request: ContextRequest):
+    """Search memories by query."""
+    if MEM0 is None:
+        raise HTTPException(status_code=503, detail="Memory system not available")
+
+    try:
+        result = MEM0.search(
+            request.message,
+            user_id=USER_ID,
+        )
+        memories = result.get("results", []) if isinstance(result, dict) else result
+        print(f"[api] Search found {len(memories)} memories")
+        return {"memories": memories}
+    except Exception as e:
+        print(f"[api] Error searching memories: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
