@@ -10,7 +10,6 @@ import {
 } from "@assistant-ui/react";
 import {
   useChatRuntime,
-  AssistantChatTransport,
 } from "@assistant-ui/react-ai-sdk";
 import { PencilIcon, Check, X } from "lucide-react";
 import { Thread } from "@/components/assistant-ui/thread";
@@ -24,6 +23,45 @@ import { Separator } from "@/components/ui/separator";
 import { Input } from "@/components/ui/input";
 import { TooltipIconButton } from "@/components/assistant-ui/tooltip-icon-button";
 import { threadListAdapter, createHistoryAdapter } from "@/lib/thread-adapter";
+
+// Track current thread ID for chat requests via sessionStorage
+const THREAD_ID_KEY = "clara-current-thread-id";
+
+function setCurrentThreadId(id: string | undefined) {
+  if (typeof window !== "undefined") {
+    if (id) {
+      sessionStorage.setItem(THREAD_ID_KEY, id);
+    } else {
+      sessionStorage.removeItem(THREAD_ID_KEY);
+    }
+  }
+}
+
+function getCurrentThreadId(): string | null {
+  if (typeof window !== "undefined") {
+    return sessionStorage.getItem(THREAD_ID_KEY);
+  }
+  return null;
+}
+
+// Intercept fetch to add thread ID header for /api/chat requests
+if (typeof window !== "undefined") {
+  const originalFetch = window.fetch;
+  window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+
+    if (url.includes("/api/chat")) {
+      const threadId = getCurrentThreadId();
+      const headers = new Headers(init?.headers);
+      if (threadId) {
+        headers.set("X-Thread-Id", threadId);
+      }
+      return originalFetch(input, { ...init, headers });
+    }
+
+    return originalFetch(input, init);
+  };
+}
 
 /**
  * Header component that shows the current thread title with edit capability.
@@ -112,6 +150,9 @@ function ThreadProvider({ children }: { children?: React.ReactNode }) {
   const threadListItem = useThreadListItem();
   const remoteId = threadListItem?.remoteId;
 
+  // Track current thread ID in sessionStorage for chat requests
+  setCurrentThreadId(remoteId);
+
   const history = useMemo(() => createHistoryAdapter(remoteId), [remoteId]);
   const adapters = useMemo(() => ({ history }), [history]);
 
@@ -144,9 +185,7 @@ export const Assistant = () => {
   const runtime = useRemoteThreadListRuntime({
     runtimeHook: () =>
       useChatRuntime({
-        transport: new AssistantChatTransport({
-          api: "/api/chat",
-        }),
+        api: "/api/chat",
       }),
     adapter: {
       ...threadListAdapter,

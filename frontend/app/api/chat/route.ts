@@ -1,6 +1,7 @@
-import { streamText } from "ai";
+import { streamText, extractReasoningMiddleware, wrapLanguageModel } from "ai";
 import { createOpenAI } from "@ai-sdk/openai";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
+import { createAnthropic } from "@ai-sdk/anthropic";
 
 // Message type from assistant-ui/ai SDK
 interface ChatMessage {
@@ -41,21 +42,61 @@ const customOpenAI = createOpenAICompatible({
   },
 });
 
+// Create Anthropic client for direct Claude API access
+const anthropic = process.env.ANTHROPIC_API_KEY
+  ? createAnthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
+  : null;
+
+// Check if a model name indicates it supports thinking/reasoning
+function supportsThinking(modelName: string): boolean {
+  const thinkingModels = [
+    "claude-opus-4",
+    "claude-sonnet-4",
+    "claude-3-7-sonnet",
+    "kimi-k2-thinking",
+    "deepseek-r1",
+    "o1",
+    "o3",
+  ];
+  return thinkingModels.some((m) => modelName.toLowerCase().includes(m.toLowerCase()));
+}
+
 // Get the appropriate model based on provider
 function getModel() {
+  let model;
+  let modelName: string;
+
   if (LLM_PROVIDER === "nanogpt") {
-    const modelName = process.env.NANOGPT_MODEL || "moonshotai/kimi-k2-thinking";
+    modelName = process.env.NANOGPT_MODEL || "moonshotai/kimi-k2-thinking";
     console.log("[chat] Using NanoGPT with model:", modelName);
-    return nanogpt.chatModel(modelName);
+    model = nanogpt.chatModel(modelName);
   } else if (LLM_PROVIDER === "openai") {
-    const modelName = process.env.CUSTOM_OPENAI_MODEL || "gpt-4o";
+    modelName = process.env.CUSTOM_OPENAI_MODEL || "gpt-4o";
     console.log("[chat] Using custom OpenAI with model:", modelName);
-    return customOpenAI.chatModel(modelName);
+    model = customOpenAI.chatModel(modelName);
+  } else if (LLM_PROVIDER === "anthropic" && anthropic) {
+    modelName = process.env.ANTHROPIC_MODEL || "claude-sonnet-4-20250514";
+    console.log("[chat] Using Anthropic with model:", modelName);
+    model = anthropic(modelName);
   } else {
-    const modelName = process.env.OPENROUTER_MODEL || "anthropic/claude-sonnet-4";
+    modelName = process.env.OPENROUTER_MODEL || "anthropic/claude-sonnet-4";
     console.log("[chat] Using OpenRouter with model:", modelName);
-    return openrouter(modelName);
+    model = openrouter(modelName);
   }
+
+  // Wrap model with reasoning middleware if it supports thinking
+  // This extracts <think>...</think> or <thinking>...</thinking> blocks
+  if (supportsThinking(modelName)) {
+    console.log("[chat] Model supports thinking, wrapping with reasoning middleware");
+    return wrapLanguageModel({
+      model,
+      middleware: extractReasoningMiddleware({
+        tagName: "thinking", // Claude uses <thinking> tags
+      }),
+    });
+  }
+
+  return model;
 }
 
 const BACKEND_URL = process.env.BACKEND_URL || "http://localhost:8000";
@@ -82,13 +123,18 @@ const getTextContent = (message: ChatMessage): string => {
 };
 
 export async function POST(req: Request) {
-  console.log("[chat] POST /api/chat called");
-  console.log("[chat] LLM_PROVIDER:", LLM_PROVIDER);
-  console.log("[chat] BACKEND_URL:", BACKEND_URL);
-
   const body = await req.json();
-  const { messages }: { messages: ChatMessage[] } = body;
-  console.log("[chat] Received messages count:", messages?.length);
+  const { messages, threadId: bodyThreadId }: { messages: ChatMessage[]; threadId?: string } = body;
+
+  // Get thread ID from header or body
+  const threadId = req.headers.get("X-Thread-Id") || bodyThreadId;
+
+  if (!threadId) {
+    console.error("[chat] No thread ID provided");
+    return new Response("Thread ID required", { status: 400 });
+  }
+
+  console.log("[chat] Thread:", threadId, "Messages:", messages?.length);
 
   // Get the last user message
   const lastUserMessage = messages.findLast((m) => m.role === "user");
@@ -107,6 +153,7 @@ export async function POST(req: Request) {
   try {
     const requestBody = {
       message: userMessageText,
+      thread_id: threadId,
       project: "Default Project",
     };
 
@@ -157,6 +204,7 @@ export async function POST(req: Request) {
             body: JSON.stringify({
               user_message: userMessageText,
               assistant_message: text,
+              thread_id: threadId,
               project: "Default Project",
             }),
           });

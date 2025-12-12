@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+import asyncio
 import os
 from pathlib import Path
 from dotenv import load_dotenv
-from mem0 import Memory
+from mem0 import AsyncMemory
 
 load_dotenv()
 
@@ -58,6 +59,61 @@ BASE_DATA_DIR = Path(os.getenv("DATA_DIR", str(Path(__file__).parent)))
 QDRANT_DATA_DIR = BASE_DATA_DIR / "qdrant_data"
 QDRANT_DATA_DIR.mkdir(parents=True, exist_ok=True)
 
+# Graph memory configuration (optional - for relationship tracking)
+# Supported providers: "neo4j", "kuzu" (embedded), or empty to disable
+GRAPH_STORE_PROVIDER = os.getenv("GRAPH_STORE_PROVIDER", "").lower()
+
+# Neo4j configuration (if using neo4j provider)
+NEO4J_URL = os.getenv("NEO4J_URL")
+NEO4J_USERNAME = os.getenv("NEO4J_USERNAME", "neo4j")
+NEO4J_PASSWORD = os.getenv("NEO4J_PASSWORD")
+
+# Kuzu configuration (embedded graph database - no external server needed)
+KUZU_DATA_DIR = BASE_DATA_DIR / "kuzu_data"
+if GRAPH_STORE_PROVIDER == "kuzu":
+    KUZU_DATA_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def _get_graph_store_config() -> dict | None:
+    """
+    Build graph store config for relationship tracking.
+
+    Graph memory enables tracking relationships between people, places, events.
+    Supports:
+    - neo4j: Requires external Neo4j server or Neo4j Aura (free tier available)
+    - kuzu: Embedded graph database, no external server needed
+    """
+    if not GRAPH_STORE_PROVIDER:
+        return None
+
+    if GRAPH_STORE_PROVIDER == "neo4j":
+        if not NEO4J_URL or not NEO4J_PASSWORD:
+            print("[mem0] Graph store: Neo4j configured but NEO4J_URL or NEO4J_PASSWORD not set")
+            return None
+
+        print(f"[mem0] Graph store: Neo4j at {NEO4J_URL}")
+        return {
+            "provider": "neo4j",
+            "config": {
+                "url": NEO4J_URL,
+                "username": NEO4J_USERNAME,
+                "password": NEO4J_PASSWORD,
+            },
+        }
+
+    elif GRAPH_STORE_PROVIDER == "kuzu":
+        print(f"[mem0] Graph store: Kuzu (embedded) at {KUZU_DATA_DIR}")
+        return {
+            "provider": "kuzu",
+            "config": {
+                "db_path": str(KUZU_DATA_DIR),
+            },
+        }
+
+    else:
+        print(f"[mem0] Unknown GRAPH_STORE_PROVIDER={GRAPH_STORE_PROVIDER}")
+        return None
+
 
 def _get_llm_config() -> dict | None:
     """
@@ -98,8 +154,111 @@ def _get_llm_config() -> dict | None:
 # Get LLM config
 llm_config = _get_llm_config()
 
+# Get graph store config
+graph_store_config = _get_graph_store_config()
+
+# Custom fact extraction prompt
+CUSTOM_EXTRACTION_PROMPT = """You are a memory extraction system for a personal AI assistant.
+
+Your task is to extract long-term, reusable facts from the conversation.
+Only extract information that would be useful in future conversations.
+
+DO NOT extract:
+- Temporary emotions, moods, or complaints
+- Short-term plans or one-off tasks
+- Information that is obvious from recent chat context
+- Conversational filler or opinions that may change
+- Raw conversation summaries
+
+ONLY extract facts that are:
+- Stable over time
+- Likely to be referenced again
+- Helpful for personalization, continuity, or project understanding
+
+When extracting facts:
+- Write them in clear, concise, declarative sentences
+- Use third-person perspective
+- Do NOT include timestamps
+- Do NOT include conversational language
+- Do NOT repeat the user's wording verbatim unless necessary
+
+Classify each fact as ONE of the following types:
+
+1. USER_FACT
+   - Long-term personal information about the user
+   - Preferences, habits, background, recurring goals
+
+2. PROJECT_FACT
+   - Information that is specific to the current project or topic
+   - Design decisions, constraints, terminology, worldbuilding, architecture
+
+3. EXPLICIT_MEMORY
+   - Information the user clearly asked to be remembered
+
+If no useful long-term facts are present, return an empty list.
+
+OUTPUT FORMAT (JSON only):
+
+{
+  "memories": [
+    {
+      "type": "USER_FACT | PROJECT_FACT | EXPLICIT_MEMORY",
+      "content": "Concise declarative fact"
+    }
+  ]
+}
+"""
+
+# Custom update memory prompt
+CUSTOM_UPDATE_PROMPT = """You are a memory update system for a personal AI assistant.
+
+You are given:
+- Existing stored memories
+- Newly extracted candidate facts
+- Recent conversation context
+
+Your task is to determine whether existing memories should be:
+- KEPT as-is
+- UPDATED with new information
+- DELETED because they are no longer correct
+- LEFT UNCHANGED while ignoring the new fact
+
+Guidelines:
+
+- Prefer updating an existing memory over creating duplicates.
+- Only update or delete a memory if the new information clearly contradicts it.
+- Do NOT update memories based on temporary states, emotions, or speculation.
+- Do NOT update memories unless the user intent is explicit or unambiguous.
+- If the new fact is weaker, less certain, or context-specific, ignore it.
+
+When updating a memory:
+- Preserve the original intent of the memory.
+- Rewrite the memory as a single, concise, declarative sentence.
+- Use third-person perspective.
+- Do NOT include conversational phrasing or timestamps.
+
+When deleting a memory:
+- Only do so if it is clearly incorrect or explicitly revoked.
+
+If no changes are required, indicate that all existing memories should be kept.
+
+OUTPUT FORMAT (JSON only):
+
+{
+  "updates": [
+    {
+      "action": "KEEP | UPDATE | DELETE",
+      "existing_memory": "Original memory text",
+      "updated_memory": "Rewritten memory text (only if action is UPDATE)"
+    }
+  ]
+}
+"""
+
 # Build config - embeddings always use OpenAI
 config = {
+    "custom_prompt": CUSTOM_EXTRACTION_PROMPT,
+    "custom_update_memory_prompt": CUSTOM_UPDATE_PROMPT,
     "vector_store": {
         "provider": "qdrant",
         "config": {
@@ -120,20 +279,62 @@ config = {
 if llm_config:
     config["llm"] = llm_config
 
+# Add graph store config if configured
+if graph_store_config:
+    config["graph_store"] = graph_store_config
+
 # Debug summary
 print(f"[mem0] Embeddings: OpenAI text-embedding-3-small")
+if graph_store_config:
+    print(f"[mem0] Graph memory: ENABLED ({GRAPH_STORE_PROVIDER})")
+else:
+    print(f"[mem0] Graph memory: DISABLED (set GRAPH_STORE_PROVIDER to enable)")
 
-# Initialize mem0
-MEM0 = None
-if OPENAI_API_KEY:
+# Initialize mem0 (async version)
+MEM0: AsyncMemory | None = None
+
+
+async def _async_init_mem0() -> AsyncMemory | None:
+    """Initialize mem0 asynchronously."""
+    if not OPENAI_API_KEY:
+        print("[mem0] OPENAI_API_KEY not set - mem0 disabled (no embeddings)")
+        return None
+
     try:
         _clear_mem0_env_vars()
-        MEM0 = Memory.from_config(config)
-        print("[mem0] Memory initialized successfully")
+        # AsyncMemory.from_config may return a coroutine
+        result = AsyncMemory.from_config(config)
+        if asyncio.iscoroutine(result):
+            mem0 = await result
+        else:
+            mem0 = result
+        print("[mem0] AsyncMemory initialized successfully")
+        return mem0
     except Exception as e:
-        print(f"[mem0] WARNING: Failed to initialize Memory: {e}")
+        print(f"[mem0] WARNING: Failed to initialize AsyncMemory: {e}")
         print("[mem0] App will run without memory features")
+        return None
     finally:
         _restore_env_vars()
-else:
-    print("[mem0] OPENAI_API_KEY not set - mem0 disabled (no embeddings)")
+
+
+def _init_mem0_sync() -> AsyncMemory | None:
+    """Initialize mem0 at module load time using asyncio.run()."""
+    try:
+        # Check if we're already in an event loop
+        try:
+            loop = asyncio.get_running_loop()
+            # We're in an async context, can't use asyncio.run()
+            # This shouldn't happen at module load, but handle it
+            print("[mem0] Warning: Already in event loop, deferring initialization")
+            return None
+        except RuntimeError:
+            # No event loop running, safe to use asyncio.run()
+            return asyncio.run(_async_init_mem0())
+    except Exception as e:
+        print(f"[mem0] Error during sync initialization: {e}")
+        return None
+
+
+# Initialize at module load
+MEM0 = _init_mem0_sync()
