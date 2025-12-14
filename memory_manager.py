@@ -18,7 +18,7 @@ SUMMARY_INTERVAL = 10
 
 # Paths for initial profile loading
 BASE_DIR = Path(__file__).parent
-USER_PROFILE_PATH = BASE_DIR / "user_profile.txt"
+USER_PROFILE_PATH = BASE_DIR / "inputs" / "user_profile.txt"
 PROFILE_LOADED_FLAG = BASE_DIR / ".profile_loaded"
 
 
