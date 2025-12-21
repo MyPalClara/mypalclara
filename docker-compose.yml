@@ -73,7 +73,7 @@ services:
       - DEFAULT_PROJECT=${DEFAULT_PROJECT:-Default Project}
     volumes:
       - mypalclara-data:/data
-      - ./user_profile.txt:/app/user_profile.txt:ro
+      - ./inputs/user_profile.txt:/app/inputs/user_profile.txt:ro
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s

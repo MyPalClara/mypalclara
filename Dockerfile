@@ -25,8 +25,8 @@ RUN poetry install --only main --no-interaction --no-ansi
 COPY *.py ./
 
 # Copy user_profile.txt if it exists (optional)
-RUN touch /app/user_profile.txt
-COPY user_profile.tx[t] ./
+RUN mkdir -p /app/inputs && touch /app/inputs/user_profile.txt
+COPY inputs/user_profile.tx[t] ./inputs/
 
 # Create directory for persistent data (mounted as volume)
 RUN mkdir -p /data
