@@ -134,7 +134,7 @@ LOCAL_FILE_TOOLS = [
         "function": {
             "name": "download_from_sandbox",
             "description": (
-                "Download a file from the E2B sandbox to local storage. "
+                "Download a file from the Docker sandbox to local storage. "
                 "Use this to save sandbox results permanently or to share them in chat."
             ),
             "parameters": {
@@ -164,7 +164,7 @@ LOCAL_FILE_TOOLS = [
         "function": {
             "name": "upload_to_sandbox",
             "description": (
-                "Upload a file from local storage to the E2B sandbox. "
+                "Upload a file from local storage to the Docker sandbox. "
                 "Use this to make locally saved files available for code execution, "
                 "data analysis, or processing in the sandbox environment."
             ),

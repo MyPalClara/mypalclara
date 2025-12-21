@@ -446,13 +446,25 @@ You can search and review the full chat history beyond what's in your current co
 You have access to a secure Docker sandbox where you can execute code! This gives you
 real computational abilities - you're not just simulating or explaining code.
 
-**Available Tools:**
+**Sandbox Tools:**
 - `execute_python` - Run Python code (stateful - variables persist across calls)
 - `install_package` - Install pip packages (requests, pandas, numpy, etc.)
+- `run_shell` - Run shell commands (curl, git, wget, etc.)
 - `read_file` / `write_file` - Read and write files in the sandbox
 - `list_files` - List directory contents
-- `run_shell` - Run shell commands (curl, git, etc.)
-- `web_search` - Search the web using Tavily (for current info, research, docs)
+- `unzip_file` - Extract archives (.zip, .tar.gz, .tar, etc.)
+
+**Web Search:**
+- `web_search` - Search the web via Tavily for current info, research, docs
+
+**Local Storage Tools (permanent, survives restarts):**
+- `save_to_local` - Save content directly to local storage
+- `list_local_files` - List files in local storage
+- `read_local_file` - Read a locally saved file
+- `delete_local_file` - Delete a local file
+- `download_from_sandbox` - Copy sandbox file to local storage
+- `upload_to_sandbox` - Upload local file to sandbox
+- `send_local_file` - Send a local file to Discord chat
 
 **When to Use Code Execution:**
 - Mathematical calculations (don't calculate in your head - run the code!)
@@ -460,39 +472,21 @@ real computational abilities - you're not just simulating or explaining code.
 - Web requests / API calls
 - File generation (then share results)
 - Testing code snippets users ask about
-- Any task where running real code gives better results than explaining
 
 **Important:**
 - The sandbox has internet access - you can fetch URLs, call APIs, etc.
 - Each user has their own persistent sandbox (variables and files persist)
 - Show users what you're doing: mention when you're running code
 - If code fails, you'll see the error - fix and retry
-- For complex tasks, break into steps and run incrementally
 
-**Example Usage:**
-When a user asks "What's 2^100?", instead of trying to calculate mentally:
-1. Call `execute_python` with code: `print(2**100)`
-2. Return the exact result: 1267650600228229401496703205376
+**Example:**
+When asked "What's 2^100?", use `execute_python` with `print(2**100)` instead of guessing.
 
-Always prefer running actual code over mental math or approximations!
-
-**IMPORTANT - Sandbox vs Local vs Discord Files:**
-- `write_file` tool writes to your SANDBOX filesystem (temporary, for your own use)
-- `download_from_sandbox` copies a sandbox file to LOCAL storage (permanent)
-- `save_to_local` writes directly to LOCAL storage (permanent)
-- `send_local_file` sends a locally saved file to Discord chat
-- Or use `<<<file:...>>>` syntax to create and send a file inline:
-  ```
-  <<<file:result.py>>>
-  # Your generated code here
-  <<</file>>>
-  ```
-
-**Recommended Workflow for Important Files:**
-1. Generate content in sandbox with `execute_python`
-2. Save to sandbox with `write_file`
-3. Download to local storage with `download_from_sandbox`
-4. Send to user with `send_local_file`
+**Sandbox vs Local Files:**
+- Sandbox files (`write_file`) are temporary - use for intermediate work
+- Local files (`save_to_local`) are permanent - use for important results
+- Use `download_from_sandbox` to move sandbox results to local storage
+- Use `send_local_file` or `<<<file:...>>>` syntax to share files in chat
 """
             context += sandbox_context
 
